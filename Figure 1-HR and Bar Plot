@@ -1,0 +1,37 @@
+##Calculating Hazard Ratios (HR)  
+#Input text file should include the survival time (hrs), status (1=dead, 0=alive), and the genotype
+  #Note- the first group list should be the control group 
+  #example of input file: 
+  #70.5	1	Attp40
+  #100.5	1	Attp40
+  #100.5	1	Attp40
+  # ...
+  #76.5	1	Set1i 
+  #92.5	1	Set1i 
+  #94.5	1	Set1i 
+  # ...
+
+#Code to obtain HR
+library(survival)
+mydata<- read.delim("INPUT FILE NAME", header=FALSE)
+names(mydata)=c("time", "status", "x")
+mydata$x<-as.character(mydata$x)
+mydata$x <- factor(mydata$x, levels=unique(mydata$x))
+cox<-coxph(Surv(time, status)~x, data=mydata)
+summary(cox)
+#Note the HR is the exp(coef) value and the p-value is Pr(>|z|) value 
+
+#Plot the ln(HR) of all DGRP tested as a boxplot 
+#Note the natural log was taken to normalize the HR data 
+#Example of input file, ln(HR) listed smallest to largest: 
+  #DGRP  ln(HR)
+  #26  0.417920549
+  #38  0.301880792
+  # ...
+
+data<- read.delim("INPUT FILE NAME", header=TRUE)
+data$DGRP.line <-as.character(data$DGRP.line)
+data$DGRP.line <- factor(data$DGRP.line, levels=unique(data$DGRP.line))
+ggplot(data, aes(x = DGRP.line, y = ln.HR.)) + geom_bar(stat = "identity")
+
+
