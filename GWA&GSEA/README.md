@@ -53,3 +53,49 @@ line 36-40, edit to match your folder locations
 Open Gitbash to folder and run following code: 
 #If python isn't your path run: PATH=$PATH:/c/Python27/
 python SNP2Gene4GSEA_2.py
+
+###STEP 3: Run GSEA
+###Code originally published: https://gsajournals.figshare.com/articles/dataset/Supplemental_Material_for_Chow_et_al_2019/9808379?file=17599163
+###Code created in the Goodman lab and published in association with the following manuscript: https://doi.org/10.1534/g3.119.400722
+#These can be run on your desktop or on the server. Very low computational power needed. 
+#On desktop, use Gitbash (or Mac equivalent) 
+
+#Need the following files in one directory- 
+  #all_droso_genes.txt <- [expression_file]
+  #GSEAsourceCode.txt
+  #term2id.bp.mf.cc.txt
+  #SNP2Gene4GSEA_output_terse.txt <- [annotation_file]
+
+#Fifteen individual Java class files are listed in the associated file “GSEAsourceCode.txt”
+#Compile the class files into GSEA.jar using any compiler of your choosing.
+
+#To run GSEA.jar, use the following command:
+
+java -jar GSEA.jar [expression_file] [annotation_file] [output_file]
+
+#from the directory holding the jar file, expression file, and annotation file.  
+#The expression_file is the one created from the GWAS output file, consisting of two columns (FBgn# and -log(GWAS variant ID p-value)).  
+#The annotation_file is a tab-delimited file that links the Entry_ID (i.e., FBgn#) with the functional groups (i.e., GO ID) to test against.  
+#The output_file is where you want the results to go.  I usually call this OUTPUT.txt and rename it later.
+
+#The output format will be a tab-delimited file as follows
+#[experiment_name] [functional_group] [p_value] [es_score] [#genes] [genes]
+
+#I open the OUTPUT.txt file in Excel and add these headings in the 1st row.  
+#The es_score is the marker of whether the gene list was concentrated at the top (positive) or bottom (negative).  
+  #When the input data consists of only one experiment, as is the case with GWAS data, anything with a negative es_score means the gene list was concentrated at the bottom of the list, which corresponds to things not    significantly enriched.  
+#The p-value is the significance of the es_score, computed using the dynamic programming method of Keller et al (PMID 17683603).  
+#The #genes tells you the number of genes contributing to the maximum es score found and the genes tells you the ids of the genes that are in that list as well (seperated by ";").
+
+Open OUTPUT.txt in excel 
+#With the Excel file, you can use the term2id.bp.mf.cc.txt file with VLOOKUP to assign GO category names to the ID#’s. 
+#Then I do a series of sortings to delete rows with negative enrichment scores and #genes less than a cutoff value (usually 3-5) but depends on your output data. 
+#Finally, I use the last column (genes) and assign gene names to each and the (-log(GWAS variant ID p-value)).  
+#I only do this if I want to show the genes found within each enriched GO term.
+
+###STEP 4: GSEA R plot
+#Make .txt file with the following columns: 
+  #Term pvalue ES No_genes 
+  #^Sort file however you want terms to be sorted on plot (by p_value or es score) 
+
+Run GSEAplot.R
