@@ -1,0 +1,15 @@
+/usr/bin/terminal
+
+srun --time=3:00:00 --nodes=2 --account=XXX --partition=XXX --pty /bin/bash -l
+
+cd /DIRECTORY_location
+#your path must already have GEMMA (https://github.com/genetics-statistics/GEMMA) 
+module load gemma
+gemma -bfile dgrp2 -gk 1 -o dgrp2_matrix
+mv /DIRECTORY_location/output/dgrp2_matrix_cXX.txt /DIRECTORY_location
+cd /DIRECTORY_location
+gemma -bfile dgrp2 -k dgrp2_matrix.cXX.txt -maf 0.001 -miss 0.2 -lmm 4 -n 1 -o OUTPUT_FILE_NAME
+
+cd /DIRECTORY_location/output
+
+awk '$12 < 10^-4' OUTPUT_FILE_NAME.assoc.txt > OUTPUT_FILE_NAME_assoc.top.txt
