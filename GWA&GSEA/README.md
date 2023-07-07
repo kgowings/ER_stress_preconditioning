@@ -94,8 +94,12 @@ Open OUTPUT.txt in excel
 #I only do this if I want to show the genes found within each enriched GO term.
 
 ###STEP 4: GSEA R plot
-#Make .txt file with the following columns: 
-  #Term pvalue ES No_genes 
+
+#Create GSEAplot.txt: 
+  #Example
+    #Term	pvalue	ES	No_genes
+    #male meiosis I	0.015876766	0.518760295	8
+    #negative regulation of growth	0.01509331	0.521337929	6 
   #^Sort file however you want terms to be sorted on plot (by p_value or es score) 
 
 Run GSEAplot.R
