@@ -1,3 +1,5 @@
+##All code for Figure 1
+
 ##Calculating Cox Proportional Hazard Ratios (HR)  
 #INPUT FILE should include the survival time (hrs), status (1=dead, 0=alive), and the experimental groups
   #Note- by default the first group listed will be treated as the control group 
