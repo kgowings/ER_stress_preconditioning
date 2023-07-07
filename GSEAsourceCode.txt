@@ -1,0 +1,1013 @@
+###Code originally published: https://gsajournals.figshare.com/articles/dataset/Supplemental_Material_for_Chow_et_al_2019/9808379?file=17599163
+###Code created in the Goodman lab and published in association with the following manuscript: https://doi.org/10.1534/g3.119.400722
+--------------------------------------------------------------------------------
+//Enrichment.java
+
+package Enrichment;
+
+import Gene.Gene;
+import Sorting.Sort;
+import java.util.Iterator;
+import Gene.GeneList;
+import Gene.GeneGroup;
+import Experiment.Experiment;
+import java.io.Writer;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.util.Vector;
+import gsea.GSEA;
+import Gene.GeneGroupList;
+import Experiment.ExperimentCompendium;
+
+public class Enrichment
+{
+    private boolean debug;
+    
+    public Enrichment(final int experiments, final int geneGroups) {
+        this.debug = true;
+    }
+    
+    public void findEnrichments(final ExperimentCompendium compendium, final GeneGroupList groupList, final String outputFile) {
+        try {
+            boolean appendToFile = false;
+            compendium.reset();
+            final int experimentNumber = 0;
+            final GSEA gsea = new GSEA();
+            while (compendium.hasNext()) {
+                final Experiment experiment = compendium.getNext();
+                System.out.print("\tWorking on experiment " + experiment.getTitle());
+                int numTests = 0;
+                final Vector sorted = this.getSortedList(experiment);
+                groupList.reset();
+                final int geneGroupNumber = 0;
+                final int emptyGroups = 0;
+                while (groupList.hasNext()) {
+                    final GeneGroup geneGroup = groupList.getNext();
+                    final GeneList expressedGenes = geneGroup.getGeneList(experiment);
+                    double pvalue = 1.0;
+                    double es = 0.0;
+                    Vector genes = new Vector();
+                    if (expressedGenes.geneCount() != 0) {
+                        final EnrichmentResult result = gsea.calcPValue(experiment, sorted, expressedGenes);
+                        pvalue = result.getPValue();
+                        genes = result.getGenes();
+                        es = result.getES();
+                        ++numTests;
+                    }
+                    if (pvalue <= 1.0) {
+                        final BufferedWriter out = new BufferedWriter(new FileWriter(outputFile, appendToFile));
+                        out.write(experiment.getTitle() + "\t" + geneGroup.getGeneGroupDescription() + "\t" + pvalue + "\t" + es + "\t" + genes.size() + "\t");
+                        final Iterator geneItr = genes.iterator();
+                        while (geneItr.hasNext()) {
+                            out.write(geneItr.next().toString() + ";");
+                        }
+                        out.write("\n");
+                        out.close();
+                        appendToFile = true;
+                    }
+                }
+                System.out.println("(" + numTests + " tests)");
+                numTests = 0;
+            }
+        }
+        catch (Exception e) {
+            System.out.println("ERROR: Problem running GSEA");
+            e.printStackTrace();
+            System.exit(0);
+        }
+    }
+    
+    private Vector getSortedList(final Experiment experiment) {
+        final Vector values = new Vector();
+        final GeneList allGenes = experiment.getGeneList();
+        allGenes.reset();
+        while (allGenes.hasNext()) {
+            final Gene gene = allGenes.getNext();
+            if (experiment.getGeneRatio(gene) != -1.0) {
+                values.add(experiment.getGeneRatio(gene));
+            }
+        }
+        final Sort sort = new Sort();
+        final Vector sorted = sort.mergeSort(values, false);
+        allGenes.reset();
+        while (allGenes.hasNext()) {
+            final Gene gene2 = allGenes.getNext();
+            if (experiment.getGeneRatio(gene2) != -1.0) {
+                final int position = sorted.indexOf(experiment.getGeneRatio(gene2));
+                sorted.removeElementAt(position);
+                sorted.add(position, gene2);
+            }
+        }
+        return sorted;
+    }
+}
+
+--------------------------------------------------------------------------------
+//EnrichmentResult.java
+
+package Enrichment;
+
+import java.util.Iterator;
+import java.util.Vector;
+
+public class EnrichmentResult
+{
+    private double pvalue;
+    private double es;
+    private Vector genes;
+    
+    public EnrichmentResult(final Vector genes) {
+        this.genes = genes;
+    }
+    
+    public void setPValue(final double pvalue) {
+        this.pvalue = pvalue;
+    }
+    
+    public void setES(final double es) {
+        this.es = es;
+    }
+    
+    public double getPValue() {
+        return this.pvalue;
+    }
+    
+    public double getES() {
+        return this.es;
+    }
+    
+    public Vector getGenes() {
+        return this.genes;
+    }
+    
+    public void debug() {
+        final Iterator geneItr = this.genes.iterator();
+        while (geneItr.hasNext()) {
+            System.out.println("Gene: " + geneItr.next().toString());
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+//ExperimentParser.java
+
+package Experiment;
+
+import Gene.Gene;
+import Gene.GeneList;
+import java.io.Reader;
+import java.io.BufferedReader;
+import java.io.FileReader;
+
+public class ExperimentParser
+{
+    private ExperimentCompendium compendium;
+    
+    public ExperimentParser() {
+        this.compendium = new ExperimentCompendium();
+    }
+    
+    public ExperimentCompendium loadCompendium(final String expressionFile) {
+        try {
+            final BufferedReader in = new BufferedReader(new FileReader(expressionFile));
+            String line = in.readLine();
+            final String[] experimentHeaders = line.split("\t");
+            for (int i = 1; i < experimentHeaders.length; ++i) {
+                this.compendium.addExperiment(experimentHeaders[i]);
+            }
+            for (line = in.readLine(); line != null; line = in.readLine()) {
+                final String[] tokens = line.split("\t");
+                final String gene = tokens[0];
+                this.compendium.addGene(gene, "");
+                for (int j = 1; j < tokens.length; ++j) {
+                    if (tokens[j].equals("") || tokens[j].equals("NA")) {
+                        this.compendium.addMeasurement(experimentHeaders[j], gene, -1.0);
+                    }
+                    else {
+                        this.compendium.addMeasurement(experimentHeaders[j], gene, Double.parseDouble(tokens[j]));
+                    }
+                }
+            }
+            in.close();
+        }
+        catch (Exception e) {
+            System.out.println("Problem loading " + expressionFile);
+            System.exit(0);
+        }
+        return this.compendium;
+    }
+    
+    public void debug() {
+        System.out.println("Experiment Titles");
+        this.compendium.reset();
+        while (this.compendium.hasNext()) {
+            final Experiment e = this.compendium.getNext();
+            System.out.println(e.getTitle());
+        }
+        System.out.println("Genes");
+        final GeneList geneList = this.compendium.getGeneList();
+        geneList.reset();
+        while (geneList.hasNext()) {
+            final Gene g = geneList.getNext();
+            System.out.println(g.getGeneName() + "\t" + g.getGeneDescription());
+        }
+        this.compendium.reset();
+        while (this.compendium.hasNext()) {
+            final Experiment e2 = this.compendium.getNext();
+            geneList.reset();
+            while (geneList.hasNext()) {
+                final Gene g2 = geneList.getNext();
+                if (e2.hasGene(g2)) {
+                    System.out.println(g2.getGeneName() + "\t" + e2.getGeneRatio(g2));
+                }
+            }
+        }
+    }
+}
+
+
+--------------------------------------------------------------------------------
+//ExperimentCompendium.java
+
+package Experiment;
+
+import Gene.Gene;
+import java.util.Iterator;
+import java.util.Hashtable;
+import Gene.GeneList;
+
+public class ExperimentCompendium
+{
+    private GeneList geneList;
+    private Hashtable experimentList;
+    private Iterator experimentItr;
+    
+    public ExperimentCompendium() {
+        this.geneList = new GeneList();
+        this.experimentList = new Hashtable();
+    }
+    
+    public void addExperiment(final String title) {
+        final Experiment experiment = new Experiment(title);
+        if (this.experimentList.containsKey(title)) {
+            System.out.println("ERROR: multiple experiment titles in expression file with the description \"" + title + "\"");
+            System.exit(0);
+        }
+        this.experimentList.put(title, experiment);
+    }
+    
+    public void addGene(final String gene, final String geneDescription) {
+        this.geneList.addGene(gene, geneDescription);
+    }
+    
+    public void addMeasurement(final String experiment, final String gene, final Double ratio) {
+        final Experiment e = this.experimentList.get(experiment);
+        final Gene g = this.geneList.getGene(gene);
+        e.addGeneRatio(g, ratio);
+    }
+    
+    public void reset() {
+        this.experimentItr = this.experimentList.keySet().iterator();
+    }
+    
+    public boolean hasNext() {
+        return this.experimentItr.hasNext();
+    }
+    
+    public Experiment getNext() {
+        return this.experimentList.get(this.experimentItr.next().toString());
+    }
+    
+    public GeneList getGeneList() {
+        return this.geneList;
+    }
+    
+    public int getExperimentCount() {
+        return this.experimentList.size();
+    }
+}
+
+
+
+--------------------------------------------------------------------------------
+//Experiment.java
+
+package Experiment;
+
+import Gene.Gene;
+import java.util.Hashtable;
+import Gene.GeneList;
+
+public class Experiment
+{
+    private String title;
+    private GeneList geneList;
+    private Hashtable geneRatios;
+    
+    public Experiment(final String title) {
+        this.title = title;
+        this.geneList = new GeneList();
+        this.geneRatios = new Hashtable();
+    }
+    
+    public void addGeneRatio(final Gene gene, final Double ratio) {
+        this.geneRatios.put(gene.getGeneName(), ratio);
+        this.geneList.addGene(gene);
+    }
+    
+    public Double getGeneRatio(final Gene gene) {
+        return Double.parseDouble(this.geneRatios.get(gene.getGeneName()).toString());
+    }
+    
+    public boolean hasGene(final Gene gene) {
+        return this.geneList.hasGene(gene.getGeneName());
+    }
+    
+    public String getTitle() {
+        return this.title;
+    }
+    
+    public GeneList getGeneList() {
+        return this.geneList;
+    }
+}
+
+
+--------------------------------------------------------------------------------
+//Gene.java
+
+package Gene;
+
+public class Gene
+{
+    private String name;
+    private String description;
+    
+    public Gene(final String name, final String description) {
+        this.name = name;
+        this.description = description;
+    }
+    
+    public String getGeneName() {
+        return this.name;
+    }
+    
+    public String getGeneDescription() {
+        return this.description;
+    }
+}
+
+
+--------------------------------------------------------------------------------
+//GeneGroup.java
+
+package Gene;
+
+import Experiment.Experiment;
+
+public class GeneGroup
+{
+    private GeneList geneList;
+    private String description;
+    
+    public GeneGroup(final String description) {
+        this.geneList = new GeneList();
+        this.description = description;
+    }
+    
+    public void addGene(final Gene gene) {
+        this.geneList.addGene(gene);
+    }
+    
+    public String getGeneGroupDescription() {
+        return this.description;
+    }
+    
+    public int geneCount() {
+        return this.geneList.geneCount();
+    }
+    
+    public GeneList getGeneList() {
+        return this.geneList;
+    }
+    
+    public GeneList getGeneList(final Experiment experiment) {
+        final GeneList temp = new GeneList();
+        this.geneList.reset();
+        while (this.geneList.hasNext()) {
+            final Gene gene = this.geneList.getNext();
+            if (experiment.hasGene(gene) && experiment.getGeneRatio(gene) != -1.0) {
+                temp.addGene(gene);
+            }
+        }
+        return temp;
+    }
+}
+
+
+--------------------------------------------------------------------------------
+//GeneGroupList.java
+
+package Gene;
+
+import java.util.Iterator;
+import java.util.Hashtable;
+
+public class GeneGroupList
+{
+    private Hashtable geneGroupList;
+    private Iterator geneGroupItr;
+    
+    public GeneGroupList() {
+        this.geneGroupList = new Hashtable();
+    }
+    
+    public void addGeneGroup(final String geneGroup) {
+        if (!this.geneGroupList.containsKey(geneGroup)) {
+            final GeneGroup g = new GeneGroup(geneGroup);
+            this.geneGroupList.put(geneGroup, g);
+        }
+    }
+    
+    public void addGene(final String geneGroup, final Gene gene) {
+        final GeneGroup g = this.geneGroupList.get(geneGroup);
+        g.addGene(gene);
+    }
+    
+    public boolean hasGeneGroup(final String geneGroup) {
+        return this.geneGroupList.containsKey(geneGroup);
+    }
+    
+    public GeneGroup getGeneGrop(final String geneGroup) {
+        return this.geneGroupList.get(geneGroup);
+    }
+    
+    public void reset() {
+        this.geneGroupItr = this.geneGroupList.keySet().iterator();
+    }
+    
+    public boolean hasNext() {
+        return this.geneGroupItr.hasNext();
+    }
+    
+    public GeneGroup getNext() {
+        return this.geneGroupList.get(this.geneGroupItr.next().toString());
+    }
+    
+    public int groupCount() {
+        return this.geneGroupList.size();
+    }
+}
+
+
+--------------------------------------------------------------------------------
+//GeneGroupParser.java
+
+package Gene;
+
+import java.io.Reader;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import Experiment.ExperimentCompendium;
+
+public class GeneGroupParser
+{
+    private GeneGroupList geneGroupList;
+    
+    public GeneGroupParser() {
+        this.geneGroupList = new GeneGroupList();
+    }
+    
+    public GeneGroupList loadGeneGroups(final ExperimentCompendium compendium, final String groupFile) {
+        try {
+            final BufferedReader in = new BufferedReader(new FileReader(groupFile));
+            for (String line = in.readLine(); line != null; line = in.readLine()) {
+                final String[] tokens = line.split("\t");
+                final String gene = tokens[0];
+                final String group = tokens[1];
+                int depth = -1;
+                if (tokens.length == 3) {
+                    depth = Integer.parseInt(tokens[2]);
+                }
+                if (!this.geneGroupList.hasGeneGroup(group)) {
+                    this.geneGroupList.addGeneGroup(group);
+                }
+                if (compendium.getGeneList().hasGene(gene)) {
+                    this.geneGroupList.addGene(group, compendium.getGeneList().getGene(gene));
+                }
+            }
+            in.close();
+        }
+        catch (Exception e) {
+            System.out.println("Problem loading " + groupFile);
+            System.exit(0);
+        }
+        return this.geneGroupList;
+    }
+    
+    public void debug() {
+        this.geneGroupList.reset();
+        while (this.geneGroupList.hasNext()) {
+            final GeneGroup geneGroup = this.geneGroupList.getNext();
+            System.out.println(geneGroup.getGeneGroupDescription());
+            final GeneList geneList = geneGroup.getGeneList();
+            geneList.reset();
+            while (geneList.hasNext()) {
+                final Gene gene = geneList.getNext();
+                System.out.println("\t" + gene.getGeneName());
+            }
+        }
+    }
+}
+
+
+--------------------------------------------------------------------------------
+//GeneList.java
+
+package Gene;
+
+import java.util.Iterator;
+import java.util.Hashtable;
+
+public class GeneList
+{
+    private Hashtable geneList;
+    private Iterator geneItr;
+    
+    public GeneList() {
+        this.geneList = new Hashtable();
+    }
+    
+    public void addGene(final String gene, final String description) {
+        final Gene g = new Gene(gene, description);
+        this.geneList.put(gene, g);
+    }
+    
+    public void addGene(final Gene gene) {
+        this.geneList.put(gene.getGeneName(), gene);
+    }
+    
+    public boolean hasGene(final String gene) {
+        return this.geneList.containsKey(gene);
+    }
+    
+    public Gene getGene(final String gene) {
+        return this.geneList.get(gene);
+    }
+    
+    public void reset() {
+        this.geneItr = this.geneList.keySet().iterator();
+    }
+    
+    public boolean hasNext() {
+        return this.geneItr.hasNext();
+    }
+    
+    public Gene getNext() {
+        return this.geneList.get(this.geneItr.next().toString());
+    }
+    
+    public int geneCount() {
+        return this.geneList.size();
+    }
+}
+
+
+--------------------------------------------------------------------------------
+//ESCell.java
+
+package gsea;
+
+import java.math.BigInteger;
+
+public class ESCell
+{
+    int esScore;
+    int column;
+    BigInteger esPaths;
+    
+    public ESCell(final int column, final int esScore) {
+        this.column = column;
+        this.esScore = esScore;
+        this.esPaths = BigInteger.valueOf(0L);
+    }
+    
+    public int getColumn() {
+        return this.column;
+    }
+    
+    public int getESScore() {
+        return this.esScore;
+    }
+    
+    public void setESPaths(final BigInteger paths) {
+        this.esPaths = paths;
+    }
+    
+    public BigInteger getESPaths() {
+        return this.esPaths;
+    }
+}
+
+
+--------------------------------------------------------------------------------
+//ESCellList.java
+
+package gsea;
+
+import java.util.Iterator;
+import java.util.Hashtable;
+
+public class ESCellList
+{
+    Hashtable cells;
+    int column;
+    
+    public ESCellList() {
+        this.cells = new Hashtable();
+        this.column = 0;
+    }
+    
+    public void addCell(final ESCell cell) {
+        this.cells.put(cell.getESScore(), cell);
+        this.column = cell.getColumn();
+    }
+    
+    public boolean hasNext() {
+        final Iterator cellItr = this.cells.keySet().iterator();
+        return cellItr.hasNext();
+    }
+    
+    public ESCell getNext() {
+        final Iterator cellItr = this.cells.keySet().iterator();
+        final int esScore = Integer.parseInt(cellItr.next().toString());
+        return this.cells.get(esScore);
+    }
+    
+    public boolean hasCell(final int esScore) {
+        return this.cells.containsKey(esScore);
+    }
+    
+    public int getColumn() {
+        return this.column;
+    }
+    
+    public ESCell getCell(final int esScore) {
+        return this.cells.get(esScore);
+    }
+    
+    public void removeCell(final int esScore) {
+        this.cells.remove(esScore);
+    }
+}
+
+
+--------------------------------------------------------------------------------
+//GSEA.java
+
+package gsea;
+
+import java.math.BigInteger;
+import java.util.Iterator;
+import Gene.Gene;
+import Enrichment.EnrichmentResult;
+import Gene.GeneList;
+import java.util.Vector;
+import Experiment.Experiment;
+
+public class GSEA
+{
+    private double PI;
+    private double E;
+    
+    public GSEA() {
+        this.PI = 4.0 * Math.atan2(1.0, 1.0);
+        this.E = Math.exp(1.0);
+    }
+    
+    public EnrichmentResult calcPValue(final Experiment experiment, final Vector sorted, final GeneList groupList) {
+        final EnrichmentResult results = this.calcESScore(experiment, sorted, groupList);
+        final double pvalue = this.calcExactPvalue(results.getES(), sorted.size(), groupList.geneCount());
+        results.setPValue(pvalue);
+        final double newES = results.getES() / (groupList.geneCount() * (sorted.size() - groupList.geneCount()));
+        results.setES(newES);
+        return results;
+    }
+    
+    private EnrichmentResult calcESScore(final Experiment experiment, final Vector sorted, final GeneList group) {
+        double currentValue = -1.0;
+        final int missValue = group.geneCount();
+        final int hitValue = sorted.size() - group.geneCount();
+        int hitScore = 0;
+        int missScore = 0;
+        int totalHitCount = 0;
+        int currentHitCount = 0;
+        int currentMissCount = 0;
+        int currentPosition = 0;
+        double maxES = 0.0;
+        int maxPosition = 0;
+        int maxGenes = 0;
+        final Vector currentEdgeSet = new Vector();
+        Vector leadingEdgeSet = new Vector();
+        for (final Gene gene : sorted) {
+            final double value = experiment.getGeneRatio(gene);
+            if (currentValue == -1.0 || currentValue == value) {
+                currentValue = value;
+                if (group.hasGene(gene.getGeneName())) {
+                    ++currentHitCount;
+                    ++totalHitCount;
+                    currentEdgeSet.add(gene.getGeneName());
+                }
+                else {
+                    ++currentMissCount;
+                }
+            }
+            else {
+                hitScore += hitValue * currentHitCount;
+                if (this.calcES(hitScore, missScore) > Math.abs(maxES)) {
+                    maxES = hitScore - missScore;
+                    maxPosition = currentPosition;
+                    maxGenes = totalHitCount;
+                    leadingEdgeSet = (Vector)currentEdgeSet.clone();
+                }
+                missScore += missValue * currentMissCount;
+                if (this.calcES(hitScore, missScore) > Math.abs(maxES)) {
+                    maxES = hitScore - missScore;
+                    maxPosition = currentPosition;
+                    maxGenes = totalHitCount;
+                    leadingEdgeSet = (Vector)currentEdgeSet.clone();
+                }
+                currentValue = value;
+                currentHitCount = 0;
+                currentMissCount = 0;
+                if (group.hasGene(gene.getGeneName())) {
+                    ++currentHitCount;
+                    ++totalHitCount;
+                    currentEdgeSet.add(gene.getGeneName());
+                }
+                else {
+                    ++currentMissCount;
+                }
+            }
+            ++currentPosition;
+        }
+        hitScore += hitValue * currentHitCount;
+        if (this.calcES(hitScore, missScore) > Math.abs(maxES)) {
+            maxES = hitScore - missScore;
+            maxPosition = currentPosition;
+            maxGenes = totalHitCount;
+            leadingEdgeSet = (Vector)currentEdgeSet.clone();
+        }
+        missScore += missValue * currentMissCount;
+        if (this.calcES(hitScore, missScore) > Math.abs(maxES)) {
+            maxES = hitScore - missScore;
+            maxPosition = currentPosition;
+            maxGenes = totalHitCount;
+            leadingEdgeSet = (Vector)currentEdgeSet.clone();
+        }
+        if (leadingEdgeSet.size() == 0) {
+            group.reset();
+            while (group.hasNext()) {
+                leadingEdgeSet.add(group.getNext().getGeneName());
+            }
+        }
+        final EnrichmentResult temp = new EnrichmentResult(leadingEdgeSet);
+        temp.setES(maxES);
+        return temp;
+    }
+    
+    private double calcES(final double hit, final double nonhit) {
+        return Math.abs(hit - nonhit);
+    }
+    
+    private double calcExactPvalue(final double originalES, final int totalProteins, final int groupProteins) {
+        final ESCellList current = new ESCellList();
+        final ESCell hit = new ESCell(1, totalProteins - groupProteins);
+        final ESCell miss = new ESCell(1, -1 * groupProteins);
+        hit.setESPaths(BigInteger.valueOf(1L));
+        miss.setESPaths(BigInteger.valueOf(1L));
+        current.addCell(hit);
+        current.addCell(miss);
+        final BigInteger esPaths = this.esPathCount(current, originalES, totalProteins, groupProteins);
+        double logESPaths = 0.0;
+        try {
+            logESPaths = Math.log(Integer.parseInt(esPaths.toString()));
+        }
+        catch (Exception e) {
+            logESPaths = this.log(esPaths, this.E);
+        }
+        final double logTotalPaths = this.choose(totalProteins, groupProteins);
+        final double logDiff = logESPaths - logTotalPaths;
+        final double ratio = Math.pow(this.E, logDiff);
+        final double pValue = 1.0 - ratio;
+        return pValue;
+    }
+    
+    private BigInteger esPathCount(ESCellList current, final double originalES, final int totalProteins, final int groupProteins) {
+        final int hitValue = totalProteins - groupProteins;
+        final int missValue = groupProteins;
+        ESCellList nextColumn = new ESCellList();
+        boolean proceed = true;
+        while (current.hasNext() && proceed) {
+            final ESCell cell = current.getNext();
+            final int nextMissES = cell.getESScore() - missValue;
+            final int nextHitES = cell.getESScore() + hitValue;
+            if (Math.abs(nextMissES) <= Math.abs(originalES) && nextColumn.hasCell(nextMissES)) {
+                final ESCell temp = nextColumn.getCell(nextMissES);
+                temp.setESPaths(temp.getESPaths().add(cell.getESPaths()));
+            }
+            else if (Math.abs(nextMissES) <= Math.abs(originalES)) {
+                final ESCell temp = new ESCell(cell.getColumn() + 1, nextMissES);
+                temp.setESPaths(cell.getESPaths());
+                nextColumn.addCell(temp);
+            }
+            if (Math.abs(nextHitES) <= Math.abs(originalES) && nextColumn.hasCell(nextHitES)) {
+                final ESCell temp = nextColumn.getCell(nextHitES);
+                temp.setESPaths(temp.getESPaths().add(cell.getESPaths()));
+            }
+            else if (Math.abs(nextHitES) <= Math.abs(originalES)) {
+                final ESCell temp = new ESCell(cell.getColumn() + 1, nextHitES);
+                temp.setESPaths(cell.getESPaths());
+                nextColumn.addCell(temp);
+            }
+            current.removeCell(cell.getESScore());
+            if (!current.hasNext()) {
+                if (nextColumn.getColumn() == totalProteins) {
+                    proceed = false;
+                }
+                else {
+                    current = nextColumn;
+                    nextColumn = new ESCellList();
+                }
+            }
+        }
+        return nextColumn.getCell(0).getESPaths();
+    }
+    
+    public double choose(final int m, final int n) {
+        double logFacM = 0.0;
+        double logFacN = 0.0;
+        double logFacMN = 0.0;
+        if (m > 20) {
+            logFacM = this.logFactorial(m);
+        }
+        else {
+            logFacM = Math.log(this.factorial(m));
+        }
+        if (n > 20) {
+            logFacN = this.logFactorial(n);
+        }
+        else {
+            logFacN = Math.log(this.factorial(n));
+        }
+        if (m - n > 20) {
+            logFacMN = this.logFactorial(m - n);
+        }
+        else {
+            logFacMN = Math.log(this.factorial(m - n));
+        }
+        return logFacM - logFacN - logFacMN;
+    }
+    
+    double log(final BigInteger a, final double base) {
+        final int b = a.bitLength() - 1;
+        double c = 0.0;
+        double d = 1.0;
+        for (int i = b; i >= 0; --i) {
+            if (a.testBit(i)) {
+                c += d;
+            }
+            d *= 0.5;
+        }
+        return (Math.log(c) + Math.log(2.0) * b) / Math.log(base);
+    }
+    
+    private double factorial(final int n) {
+        double sum = 1.0;
+        for (int i = 2; i <= n; ++i) {
+            sum *= i;
+        }
+        return sum;
+    }
+    
+    private double logFactorial(final int n) {
+        if (n <= 1) {
+            return 0.0;
+        }
+        final double result = 0.5 * Math.log(2.0 * this.PI * n) + n * Math.log(n / this.E);
+        return result;
+    }
+}
+
+
+--------------------------------------------------------------------------------
+//Main.java
+
+package gsea;
+
+import Gene.GeneGroupList;
+import Experiment.ExperimentCompendium;
+import Enrichment.Enrichment;
+import Gene.GeneGroupParser;
+import Experiment.ExperimentParser;
+import java.io.File;
+
+public class Main
+{
+    public static void main(final String[] args) {
+        if (args.length != 3) {
+            System.out.println("ERROR: three arguments required");
+            System.out.println("java -jar GSEA.jar [experiment_file] [gene_annotation_file] [output_file]");
+            System.exit(0);
+        }
+        final String experimentFile = args[0];
+        final String geneGroupFile = args[1];
+        final String outputFile = args[2];
+        File f = new File(experimentFile);
+        if (experimentFile.equals("") || !f.exists()) {
+            System.out.println("ERROR: expression file does not exist at " + experimentFile);
+            System.exit(0);
+        }
+        f = new File(geneGroupFile);
+        if (geneGroupFile.equals("") || !f.exists()) {
+            System.out.println("ERROR: group file does not exist at " + geneGroupFile);
+            System.exit(0);
+        }
+        System.out.println("Loading experiments");
+        final ExperimentParser experimentParser = new ExperimentParser();
+        final ExperimentCompendium compendium = experimentParser.loadCompendium(experimentFile);
+        System.out.println("Loading gene sets");
+        final GeneGroupParser geneGroupParser = new GeneGroupParser();
+        final GeneGroupList geneGroupList = geneGroupParser.loadGeneGroups(compendium, geneGroupFile);
+        System.out.println("Starting GSEA analysis");
+        final Enrichment enrichment = new Enrichment(compendium.getExperimentCount(), geneGroupList.groupCount());
+        enrichment.findEnrichments(compendium, geneGroupList, outputFile);
+    }
+}
+
+
+--------------------------------------------------------------------------------
+//Sort.java
+
+package Sorting;
+
+import java.util.Vector;
+
+public class Sort
+{
+    public Vector mergeSort(final Vector v, final boolean sortIncreasing) {
+        Vector sorted = new Vector();
+        if (v.size() == 1 || v.size() == 0) {
+            return v;
+        }
+        final int middle = v.size() / 2;
+        Vector left = new Vector();
+        Vector right = new Vector();
+        for (int i = 0; i < v.size(); ++i) {
+            if (i < middle) {
+                left.add(v.elementAt(i));
+            }
+            else {
+                right.add(v.elementAt(i));
+            }
+        }
+        left = this.mergeSort(left, sortIncreasing);
+        right = this.mergeSort(right, sortIncreasing);
+        sorted = this.merge(left, right, sortIncreasing);
+        return sorted;
+    }
+    
+    private Vector merge(final Vector left, final Vector right, final boolean sortIncreasing) {
+        final Vector sorted = new Vector();
+        int l = 0;
+        int r = 0;
+        while (l != left.size() || r != right.size()) {
+            if (l == left.size()) {
+                sorted.add(l + r, right.elementAt(r));
+                ++r;
+            }
+            else if (r == right.size()) {
+                sorted.add(l + r, left.elementAt(l));
+                ++l;
+            }
+            else if (Double.parseDouble(right.elementAt(r).toString()) <= Double.parseDouble(left.elementAt(l).toString()) && sortIncreasing) {
+                sorted.add(l + r, right.elementAt(r));
+                ++r;
+            }
+            else if (Double.parseDouble(right.elementAt(r).toString()) >= Double.parseDouble(left.elementAt(l).toString()) && !sortIncreasing) {
+                sorted.add(l + r, right.elementAt(r));
+                ++r;
+            }
+            else {
+                sorted.add(l + r, left.elementAt(l));
+                ++l;
+            }
+        }
+        return sorted;
+    }
+}
+
+
+--------------------------------------------------------------------------------
+
+
