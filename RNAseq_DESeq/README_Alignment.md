@@ -54,11 +54,104 @@ cd DIRECTORY_LOCATION/FASTQ
 #execute this command with your own path variables:
 
 java -jar ~/fdtCommandLine.jar -noupdates -pull -r -c hci-bio-app.hci.utah.edu -d DIRECTORY_LOCATION/FASTQ GENOMEX_LOCATION/folder  
+
 #Example
 #java -jar ~/fdtCommandLine.jar -noupdates -pull -r -c hci-bio-app.hci.utah.edu -d /scratch/kingspeak/serial/UNID/FASTQ /scratch/fdtswap/fdt_sandbox_gnomex/82b224a4-e543-4161-8e0b-2a9e40f43222/PROJECT_ID
 
+###STEP 1: EXTRACT gzipped files
+#need seqtk software 
+#this step is quick and easy enough that you don't need to submit a job through SLURM, can do it on your home node
+
+gzip -d -c filename.fastq.gz > filename.fastq
+
+	#Example
+	#gzip -d -c RAL737_noHS_L001_R1_001.fastq.gz > RAL737_noHS_L001_R1.fastq
+	#gzip -d -c RAL737_noHS_L002_R2_001.fastq.gz > RAL737_noHS_L002_R2.fastq
+
+###STEP 2:CONCATENATE lanes 
+#In this case, each sample was sequenced in two separate lanes, L001 and L002, of the same flow cell. 
+#There are two ways to combine the lanes: concatenate the Fastq files prior to alignment, or align individually, then concatenate the alignments (using Linux samtools merge). There are technical reasons for doing one or the other in certain situations, but in this case we I did the first one for simplicity.
+
+cat filename*.fastq > filename.fastq
+
+	#Example
+    #Files being combined: RAL387_HS_L001_R2.fastq & RAL387_HS_L002_R2.fastq
+	#cat RAL737_noHS_L*_R1.fastq > RAL737_noHS_R1.fastq
 
 
+###STEP 3:TRIMMING READS
+
+module load seqtk/040218
+#trim fastq files with seqtk 
+seqtk trimfq filename.fa > filename.trimmed.fa
+
+    #Example- included SLURM code above
+    
+    #module load seqtk/040218
+    #seqtk trimfq RAL819_noHS_R1.fastq > RAL819_noHS_R1.trimmed.fastq
+    #seqtk trimfq RAL819_noHS_R2.fastq > RAL819_noHS_R2.trimmed.fastq
+
+###STEP 4: INDEX the genome
+
+#First you need to upload the genome to your directory
+#THEORETICALLY you would only need the transcriptome for RNA seq. However, issues arise when you do that! So make sure that even for RNAseq you get the GENOME not the TRANSCRIPTOME. (Make sure you have the correct organism, as well as the correct build that you want) 
+#I used Drosophila melanogaster reference genome (assembly BDGP6.28, Ensembl release 109) - https://ftp.ensembl.org/pub/release-109/fasta/drosophila_melanogaster/dna_index/
+#Software needed- bowtie2/2-2.2.9 & python/3.10.3 (some bowtie functions depend on python) 
+#For more about Bowtie2 http://bowtie-bio.sourceforge.net/bowtie2/manual.shtml
+
+module load bowtie2/2-2.2.9
+module load python/3.10.3
+bowtie2-build -f DIRECTORY_LOCATION/BDGP6.28_release109/D_melanogaster.BDGP6.32.dna.toplevel.fa DIRECTORY_LOCATION/BDGP6.28_release109/Drosophila_melanogaster.BDGP6.32.dna.toplevel.genome
+
+#your job output should be 6 different files - "bowtie2-build outputs a set of 6 files with suffixes .1.bt2, .2.bt2, .3.bt2, .4.bt2, .rev.1.bt2, and .rev.2.bt2."
+
+###STEP 5: ALIGNMENT 
+#This step will take a few hours, even on the server and even if you submit several sbatch jobs 
+
+module load bowtie2/2-2.2.9
+module load python/3.10.3
+bowtie2 -x indexed genome -1 trimmed fatsq -2 paried trimmed fastq -S output_align.sam
+
+    #EXAMPLE
+    #module load bowtie2/2-2.2.9
+    #module load python/3.10.3
+    #bowtie2 -x /scratch/general/vast/u6004332/BDGP6.28_release109/Drosophila_melanogaster.BDGP6.32.dna.toplevel.genome -1      /scratch/general/vast/u6004332/RawFASTQ_HSDGRP/RAL69_HS_R1.trimmed.fastq -2 /scratch/general/vast/u6004332/RawFASTQ_HSDGRP/RAL69_HS_R2.trimmed.fastq -S /scratch/general/vast/u6004332/SAM/RAL69_HS.sam
+
+
+###STEP 5: SAMTOOLS 
+#convert and sort the sam files into bam files 
+#Software- samtools/1.5
+
+module load samtools/1.5
+samtools view -Sb output_align.sam > output.bam
+
+    #EXAMPLE
+    #module load samtools/1.5
+    #samtools view -Sb /scratch/general/vast/u6004332/SAM/RAL195_HS.sam > /scratch/general/vast/u6004332/BAM/RAL195_HS.bam
+
+#Need to sort your bam file that you just created - do this with samtools as well
+
+module load samtools/1.5
+samtools sort output.bam -o output.sorted.bam
+
+    #EXAMPLE
+    #module load samtools/1.5
+    #samtools sort /scratch/general/vast/u6004332/BAM/RAL195_HS.bam -o /scratch/general/vast/u6004332/BAM/RAL195_HS.sorted.bam
+
+#You can also wait to combine lanes and merge the sorted bam files with samtools 
+samtools merge output.bam input.bam input.bam
+
+#If jobs keep getting killed due to preemption, try adding
+#SBATCH --requeue
+    #this will automatically requeue to job to be run if it keeps getting kicked off by other jobs with higher priority
+#Can check for jobs with squeue -u UNID but  can also do scontrol show job JOBID for more detailed description of your job (like predicted finish time)
+#Cancel job with scancel <JOBID>
+
+***Now that you have your sorted BAM files, you are ready to move onto DEseq2!***
+
+
+
+    
 
 
 
