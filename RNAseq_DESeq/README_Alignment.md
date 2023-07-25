@@ -95,7 +95,7 @@ seqtk trimfq filename.fa > filename.trimmed.fa
 
 #First you need to upload the genome to your directory
 #THEORETICALLY you would only need the transcriptome for RNA seq. However, issues arise when you do that! So make sure that even for RNAseq you get the GENOME not the TRANSCRIPTOME. (Make sure you have the correct organism, as well as the correct build that you want) 
-#I used Drosophila melanogaster reference genome (assembly BDGP6.28, Ensembl release 109) - https://ftp.ensembl.org/pub/release-109/fasta/drosophila_melanogaster/dna_index/
+#I used Drosophila melanogaster reference genome (assembly BDGP6.28, Ensembl release 102) - https://ftp.ensembl.org/pub/release-109/fasta/drosophila_melanogaster/dna_index/
 #Software needed- bowtie2/2-2.2.9 & python/3.10.3 (some bowtie functions depend on python) 
 #For more about Bowtie2 http://bowtie-bio.sourceforge.net/bowtie2/manual.shtml
 
